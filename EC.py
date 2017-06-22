@@ -12,7 +12,7 @@ class AtlasI2C:
     long_timeout = 1.5             # the timeout needed to query readings and calibrations
     short_timeout = .5             # timeout for regular commands
     default_bus = 1             # the default bus for I2C on the newer Raspberry Pis, certain older boards use bus 0
-    default_address = 99         # the default address for the sensor
+    default_address = 100         # the default address for the sensor
     current_addr = default_address
 
     def __init__(self, address=default_address, bus=default_bus):
@@ -65,7 +65,7 @@ class AtlasI2C:
         elif string.upper().startswith("SLEEP"):
             return "sleep mode"
         else:
-            time.sleep(self.short_timeout)
+            time.sleep(self.long_timeout)
 
         return self.read()
 
@@ -89,7 +89,7 @@ class AtlasI2C:
 
 def main():
     device = AtlasI2C()     # creates the I2C port object, specify the address or bus if necessary
-    logfile = open("ph_logfile{}.txt".format(datetime.date.today()), "w")
+    logfile = open("ec_logfile{}.txt".format(datetime.date.today()), "w")
     print(">> Atlas Scientific sample code")
     print(">> Any commands entered are passed to the board via I2C except:")
     print(">>   List_addr lists the available I2C addresses.")
@@ -129,12 +129,19 @@ def main():
             try:
                 while True:
                     result = device.query("R")
-                    logfile.write(str(time.time()) + ", ")
+                    logfile.write(str(time.time()) + ', ')
                     logfile.write(result.split()[2] + "\n")
-                    print(result[1:])
+                    print(result)
                     time.sleep(delaytime - AtlasI2C.long_timeout)
             except KeyboardInterrupt:         # catches the ctrl-c command, which breaks the loop above
                 print("Continuous polling stopped")
+        elif input.upper().startswith("WRITE "):
+            cmd = input.lower()[6:]
+            device.write(cmd)
+
+        elif input.upper().startswith("QUERY "):
+            cmd = input.lower()[6:]
+            print(device.query(cmd))
 
         # if not a special keyword, pass commands straight to board
         else:
