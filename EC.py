@@ -86,6 +86,67 @@ class AtlasI2C:
         self.set_i2c_address(prev_addr) # restore the address we were using
         return i2c_devices
 
+import RPi.GPIO as gpio
+class Ec_state_machine():
+    # States
+    IDLE = 0
+    PUMPING = 1
+    EC_LOW = 2
+    EC_LOW_PUMPING = 3
+
+    ec_threshold = 1200
+    def __init__(self):
+        gpio.setmode(gpio.BCM)
+        gpio.setup(26, gpio.OUT)
+        self.__state = self.IDLE
+        self.__last_pumped = time.time()
+
+    def run(self, ec):
+        handlers = {
+            self.IDLE: self.idle,
+            self.PUMPING: self.pumping,
+            self.EC_LOW: self.ec_low,
+            self.EC_LOW_PUMPING: self.ec_low_pumping }
+        handlers[self.__state](ec)
+
+    def idle(self, ec):
+        print('EC STATE MACHINE: IDLE')
+        # If the last pumped time was more than 6 hours ago, pump.
+        if (time.time() - self.__last_pumped) > 6*60*60:
+            self.__state = self.PUMPING
+            self.__last_pumped = time.time()
+            gpio.output(26, 1)
+
+        # If the ec is below the EC threshold, begin pumping
+        if ec < self.ec_threshold:
+            self.__state = self.EC_LOW_PUMPING
+            self.__last_pumped = time.time()
+            gpio.output(26, 1)
+    
+    def pumping(self, ec):
+        print('EC STATE MACHINE: PUMPING')
+        # If we have been pumping for 2 minutes, go back to idle
+        if (time.time() - self.__last_pumped) > 1*60:
+            self.__state = self.IDLE
+            gpio.output(26, 0)
+            self.__last_pumped = time.time()
+
+    def ec_low_pumping(self, ec):
+        print('EC STATE MACHINE: EC_LOW_PUMPING')
+        # If we have been pumping for 1 minute, go to ec polling
+        if (time.time() - self.__last_pumped) > 1*60:
+            self.__state = self.EC_LOW
+            gpio.output(26, 0)
+            self.__last_pumped = time.time()
+
+    def ec_low(self, ec):
+        print('EC STATE MACHINE: EC_LOW')
+        if (ec < self.ec_threshold) and (time.time() - self.__last_pumped) > 15*60:
+            self.__state = self.EC_LOW_PUMPING
+            self.__last_pumped = time.time()
+            gpio.output(26, 1)
+        if ec > self.ec_threshold:
+            self.__state = self.IDLE
 
 def main():
     device = AtlasI2C()     # creates the I2C port object, specify the address or bus if necessary
@@ -97,6 +158,8 @@ def main():
     print(">>   Poll,xx.x command continuously polls the board every xx.x seconds")
     print(" where xx.x is longer than the %0.2f second timeout." % AtlasI2C.long_timeout)
     print(">> Pressing ctrl-c will stop the polling")
+
+    ec_state_machine = Ec_state_machine()
 
     # main loop
     while True:
@@ -133,6 +196,9 @@ def main():
                     logfile.write(result.split()[2] + "\n")
                     print(result)
                     time.sleep(delaytime - AtlasI2C.long_timeout)
+                    text = result.split()[2]
+                    ec = float(text.split(',')[0])
+                    ec_state_machine.run(ec)
             except KeyboardInterrupt:         # catches the ctrl-c command, which breaks the loop above
                 print("Continuous polling stopped")
         elif input.upper().startswith("WRITE "):
