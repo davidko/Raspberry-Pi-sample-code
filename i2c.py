@@ -39,16 +39,16 @@ class AtlasI2C:
         # appends the null character and sends the string over I2C
         time.sleep(0.1)
         cmd += "\00"
-        self.file_write.write(cmd)
+        self.file_write.write(cmd.encode())
 
     def read(self, num_of_bytes=31):
         # reads a specified number of bytes from I2C, then parses and displays the result
         res = self.file_read.read(num_of_bytes)         # read from the board
-        response = filter(lambda x: x != '\x00', res)     # remove the null characters to get the response
+        response = list(filter(lambda x: x != '\x00', res))     # remove the null characters to get the response
         print(response)
-        if ord(response[0]) == 1:             # if the response isn't an error
+        if response[0] == 1:             # if the response isn't an error
             # change MSB to 0 for all received characters except the first and get a list of characters
-            char_list = map(lambda x: chr(ord(x) & ~0x80), list(response[1:]))
+            char_list = map(lambda x: chr(x & ~0x80), list(response[1:]))
             # NOTE: having to change the MSB to 0 is a glitch in the raspberry pi, and you shouldn't have to do this!
             return "Command succeeded " + ''.join(char_list)     # convert the char list to a string and returns it
         else:
@@ -100,22 +100,24 @@ def main():
 
     # main loop
     while True:
-        input = raw_input("Enter command: ")
+        command = input("Enter command: ")
 
-        if input.upper().startswith("LIST_ADDR"):
+        if command.upper().startswith("LIST_ADDR"):
             devices = device.list_i2c_devices()
             for i in range(len (devices)):
                 print(devices[i])
 
         # address command lets you change which address the Raspberry Pi will poll
-        elif input.upper().startswith("ADDRESS"):
-            addr = int(string.split(input, ',')[1])
+        elif command.upper().startswith("ADDRESS"):
+            #addr = int(string.split(command, ',')[1])
+            addr = int( command.split(',')[1] )
             device.set_i2c_address(addr)
             print("I2C address set to " + str(addr))
 
         # continuous polling command automatically polls the board
-        elif input.upper().startswith("POLL"):
-            delaytime = float(string.split(input, ',')[1])
+        elif command.upper().startswith("POLL"):
+            delaytime = float( command.split(',')[1] )
+            # delaytime = float(string.split(command, ',')[1])
 
             # check for polling time being too short, change it to the minimum timeout if too short
             if delaytime < AtlasI2C.long_timeout:
@@ -123,7 +125,8 @@ def main():
                 delaytime = AtlasI2C.long_timeout
 
             # get the information of the board you're polling
-            info = string.split(device.query("I"), ",")[1]
+            info = device.query('I').split(',')[1]
+            # info = string.split(device.query("I"), ",")[1]
             print("Polling %s sensor every %0.2f seconds, press ctrl-c to stop polling" % (info, delaytime))
 
             try:
@@ -138,11 +141,11 @@ def main():
 
         # if not a special keyword, pass commands straight to board
         else:
-            if len(input) == 0:
-                print ("Please input valid command.")
+            if len(command) == 0:
+                print ("Please command valid command.")
             else:
                 try:
-                    print(device.query(input))
+                    print(device.query(command))
                 except IOError:
                     print("Query failed \n - Address may be invalid, use List_addr command to see available addresses")
 
